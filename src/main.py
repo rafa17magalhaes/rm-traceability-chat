@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from src.services.chat_service import ChatService
 from src.models.chat_request import ChatRequest
 
-# Carrega variáveis do arquivo .env
 load_dotenv()
 
 app = FastAPI()

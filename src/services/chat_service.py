@@ -40,7 +40,7 @@ def get_service_info(user_message: str) -> str:
 
 class ChatService:
     @classmethod
-    def generate_response(cls, user_message: str, session_id: str = None) -> (str, str):
+    def generate_response(cls, user_message: str, session_id: str = None) -> (str, str):  # type: ignore
         # Se session_id não for fornecido, gera um novo
         if session_id is None:
             session_id = str(uuid.uuid4())
@@ -79,7 +79,8 @@ class ChatService:
         
         try:
             with _model.chat_session() as chat:
-                response_text = chat.generate(prompt, max_tokens=1024)
+                # max_tokens para 256 para respostas mais rápidas
+                response_text = chat.generate(prompt, max_tokens=256)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Erro ao gerar resposta: {e}")
         
