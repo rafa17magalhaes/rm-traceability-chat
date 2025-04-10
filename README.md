@@ -2,6 +2,19 @@
 
 Este repositório contém o **RM Traceability Chat Microservice**, um chatbot especializado em auxiliar os usuários a navegar e utilizar o sistema RM Traceability SaaS. O serviço utiliza o GPT4All para gerar respostas contextuais com base em informações do sistema, exemplos de perguntas/respostas e uma integração simples para recuperação de informações (RAG) e gerenciamento de sessões.
 
+
+## ✨ Destaques Tecnológicos
+
+Este projeto foi desenvolvido com foco em tecnologias modernas de Inteligência Artificial:
+
+- **🧠 Gen IA (Inteligência Artificial Generativa)**: Utiliza o modelo **GPT4All**, baseado na arquitetura Transformer, para gerar respostas em linguagem natural.
+
+- **📜 Prompt Engineering**: O sistema constrói prompts sofisticados com contexto do sistema, histórico de conversas, exemplos few-shot e informações dinâmicas dos serviços, maximizando a qualidade das respostas.
+
+- **📈 Machine Learning Tradicional**: Inclui um modelo supervisionado treinado (armazenado em `model.pkl`) para prever ações do usuário com base em seu histórico e comportamento.
+
+- **🧠 Deep Learning**: O uso de LLMs como GPT4All, baseados em redes neurais profundas, garante processamento avançado de linguagem natural.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -84,20 +97,24 @@ O projeto foi estruturado de forma modular para facilitar a manutenção e escal
 ## Project Structure
 
     ``` bash
-    chat-microservice/
-    ├── .env.example          # Exemplo de arquivo de variáveis de ambiente
-    ├── Dockerfile
-    ├── docker-compose.yml
-    ├── requirements.txt
-    ├── system_context.txt    # Contexto do sistema para o chatbot
-    ├── src
-    │   ├── main.py           # Ponto de entrada do FastAPI
-    │   ├── models
-    │   │   └── chat_request.py  # Modelo Pydantic para a requisição
-    │   └── services
-    │       └── chat_service.py  # Lógica do chatbot e integração com GPT4All
-    └── tests
-        └── test_chat.py      # Testes unitários para o endpoint /chat
+  chat-microservice/
+  ├── .env.example          # Exemplo de arquivo de variáveis de ambiente
+  ├── Dockerfile
+  ├── docker-compose.yml
+  ├── requirements.txt
+  ├── system_context.txt    # Contexto do sistema para o chatbot
+  ├── src
+  │   ├── main.py           # Ponto de entrada do FastAPI
+  │   ├── models
+  │   │   └── chat_request.py  # Modelo Pydantic para a requisição
+  │   ├── services
+  │   │   ├── chat_service.py  # Lógica do chatbot e integração com GPT4All
+  │   │   └── ml_service.py    # Serviço de ML tradicional
+  │   └── ml
+  │       ├── train_model.py   # Script para treinamento do modelo
+  │       └── model.pkl        # Modelo treinado (ML tradicional)
+  └── tests
+      └── test_chat.py      # Testes unitários para o endpoint /chat
     ```
 
 ## License
