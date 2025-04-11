@@ -11,9 +11,6 @@ logger.setLevel(logging.INFO)
 
 def create_app() -> FastAPI:
     app = FastAPI(title="RM Traceability Chat Microservice")
-    # Se quiser, configure middlewares, CORS, etc.
-    
-    # Inclui o router do Chat
     app.include_router(chat_router, prefix="/chat", tags=["Chat"])
     
     return app

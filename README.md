@@ -97,24 +97,33 @@ O projeto foi estruturado de forma modular para facilitar a manutenção e escal
 ## Project Structure
 
     ``` bash
-  chat-microservice/
-  ├── .env.example          # Exemplo de arquivo de variáveis de ambiente
-  ├── Dockerfile
-  ├── docker-compose.yml
-  ├── requirements.txt
-  ├── system_context.txt    # Contexto do sistema para o chatbot
-  ├── src
-  │   ├── main.py           # Ponto de entrada do FastAPI
-  │   ├── models
-  │   │   └── chat_request.py  # Modelo Pydantic para a requisição
-  │   ├── services
-  │   │   ├── chat_service.py  # Lógica do chatbot e integração com GPT4All
-  │   │   └── ml_service.py    # Serviço de ML tradicional
-  │   └── ml
-  │       ├── train_model.py   # Script para treinamento do modelo
-  │       └── model.pkl        # Modelo treinado (ML tradicional)
-  └── tests
-      └── test_chat.py      # Testes unitários para o endpoint /chat
+    chat-microservice/
+    ├── src/
+    │   ├── api/
+    │   │   └── chat.py               # Arquivo com rotas/endpoints para o Chat
+    │   ├── config/
+    │   │   └── constants.py          # Constantes e configurações gerais (ex: SERVICE_INFO, EXAMPLES)
+    │   ├── ml/
+    │   │   ├── model.pkl             # Modelo treinado (pickle)
+    │   │   ├── train_data.csv        # Dados de treinamento
+    │   │   └── train_model.py        # Script para treinar o modelo de Machine Learning
+    │   ├── models/
+    │   │   └── chat_request.py       # Modelos Pydantic (validação de requisições)
+    │   ├── services/
+    │   │   ├── chat_service.py       # Lógica principal do Chat (prompt engineering, GPT4All)
+    │   │   └── ml_service.py         # Lógica de integração com modelo ML (fetch de inventário, predições)
+    │   ├── utils/
+    │   │   ├── context_loader.py     # Função para ler e carregar contexto do sistema
+    │   │   └── product_extractor.py  # Função utilitária para extrair nome de produto das mensagens
+    │   └── main.py                   # Ponto de entrada do FastAPI, instancia app e configura routers
+    ├── tests/
+    │   └── test_chat.py              # Testes unitários para o chat
+    ├── .env.example                  # Exemplo de variáveis de ambiente
+    ├── Dockerfile
+    ├── docker-compose.yml
+    ├── requirements.txt
+    ├── system_context.txt            # Contexto adicional do chatbot
+    └── README.md
     ```
 
 ## License
