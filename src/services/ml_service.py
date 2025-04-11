@@ -1,7 +1,7 @@
 import os
 import requests
 import logging
-from typing import Any, Dict, Optional
+from typing import Optional
 
 logger = logging.getLogger("MLService")
 logger.setLevel(logging.DEBUG)
@@ -27,7 +27,7 @@ class MLService:
             else:
                 logger.error(f"[get_company_id_for_user] user.companyId não encontrado. user_obj={user_obj}")
                 return None
-        except Exception as e:
+        except Exception:
             logger.error("[get_company_id_for_user] Erro ao buscar companyId:", exc_info=True)
             return None
 
@@ -36,14 +36,13 @@ class MLService:
         backend_url = os.getenv("BACKEND_URL", "http://rm_traceability_app:3001")
         url = f"{backend_url}/orchestration/inventory-quantity?companyId={company_id}&resourceName={resource_name}"
         logger.debug(f"[get_inventory_quantity] Chamando endpoint: {url}")
-
         try:
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
             data = resp.json()
             logger.info(f"[get_inventory_quantity] Response from {url}: {data}")
             return data.get("quantidade", 0)
-        except Exception as e:
+        except Exception:
             logger.error("[get_inventory_quantity] Erro ao consultar inventory-quantity:", exc_info=True)
             return 0
 
