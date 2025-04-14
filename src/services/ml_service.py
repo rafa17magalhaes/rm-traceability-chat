@@ -41,7 +41,7 @@ class MLService:
             resp.raise_for_status()
             data = resp.json()
             logger.info(f"[get_inventory_quantity] Response from {url}: {data}")
-            return data.get("quantidade", 0)
+            return data.get("amount", 0)
         except Exception:
             logger.error("[get_inventory_quantity] Erro ao consultar inventory-quantity:", exc_info=True)
             return 0
