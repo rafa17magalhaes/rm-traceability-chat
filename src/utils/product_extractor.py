@@ -10,21 +10,25 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 def extract_product(frase: str) -> str:
-    """
-    Extrai o nome do produto da frase, considerando variações na estrutura:
-    - "quantos/quantas X tenho no inventario/estoque"
-    - "quantos/quantas X no inventário"
-    """
     padrao = (
-        r"(?i)(?:quant[oa]s?)\s+(.*?)\s+"
-        r"(?:eu\s+tenho\s+)?"
-        r"(?:no|em)(?:\s+meu)?\s+"
-        r"(?:inventar(?:io|[íi]ario)|estoque)"
+        r"(?i)"                                   # Case-insensitive
+        r"(?:tenho|tem|quant[oa]s?)\s+"           # 'tenho', 'tem', 'quanto', 'quantos', etc.
+        r"(?:de\s+)?(.*?)\s+"                     # opcional "de " e depois produto (captura lazy)
+        r"(?:no|em)(?:\s+meu)?\s+"                # 'no', 'em', 'no meu', 'em meu'
+        r"(?:inventar(?:io|[íi]ario)|estoque)"    # 'inventario', 'estoque'
     )
+    
     match = re.search(padrao, frase)
     if match:
         produto_extraido = match.group(1).strip()
-        produto_extraido = re.sub(r"(?i)\btenho\b", "", produto_extraido).strip()
+        
+        produto_extraido = re.sub(r"(?i)\b(tenho|tem)\b", "", produto_extraido).strip()
+        
+        produto_extraido = re.sub(r"(?i)^de\s+", "", produto_extraido).strip()
+
+        if produto_extraido.endswith("s"):
+            produto_extraido = produto_extraido[:-1]
+
         logger.debug(f"[extract_product] Produto extraído: {produto_extraido}")
         return produto_extraido
 

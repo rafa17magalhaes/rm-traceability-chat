@@ -38,8 +38,8 @@ class ChatService:
         company_id: Optional[str] = None
     ) -> (str, str):  # type: ignore
         """
-        Gera a resposta do chat com base na mensagem do usuário. Se for caso de
-        consulta de inventário, injeta informações do BD usando o MLService.
+        Gera a resposta do chat com base na mensagem do usuário.
+        Se extrair produto + tiver company_id, injeta dados de inventário do BD.
         """
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -49,7 +49,7 @@ class ChatService:
 
         lower_msg = user_message.lower()
 
-        # Tenta recuperar company_id se não for informado
+        # Se company_id não foi passado, tenta descobrir a partir de user_id
         if not company_id and user_id:
             logger.debug("[ChatService] Tentando descobrir company_id via user_id")
             found_company = MLService.get_company_id_for_user(user_id)
@@ -59,41 +59,30 @@ class ChatService:
             else:
                 logger.warning("[ChatService] Não foi possível obter company_id do usuário.")
 
-        # Verifica se a mensagem é referente ao inventário
-        if "quantos" in lower_msg and ("inventário" in lower_msg or "inventario" in lower_msg):
-            produto = extract_product(user_message)
-            if produto and company_id:
-                logger.debug(f"[ChatService] Produto={produto} e company_id={company_id}")
-                inventory_answer = MLService.fetch_inventory_for_product(produto, company_id)
-                user_message += (
-                    "\n[IMPORTANTE: Estes dados do BD são verídicos e não devem ser alterados.]\n"
-                    f"{inventory_answer}\n"
-                    "[Responda SOMENTE com base nesses dados, sem contradizê-los.]\n"
-                )
-            else:
-                logger.warning("[ChatService] Produto ou company_id ausente para inventário.")
+        # extrai o produto da mensagem
+        produto = extract_product(user_message)
+        if produto and company_id:
+            logger.debug(f"[ChatService] Produto={produto} e company_id={company_id}")
+            inventory_answer = MLService.fetch_inventory_for_product(produto, company_id)
+            user_message += (
+                "\n[IMPORTANTE: Estes dados do BD são verídicos e não devem ser alterados.]\n"
+                f"{inventory_answer}\n"
+                "[Responda SOMENTE com base nesses dados, sem contradizê-los.]\n"
+            )
         else:
-            produto = extract_product(user_message)
-            if produto and company_id:
-                logger.debug(f"[ChatService] (via outro route) Produto={produto} e company_id={company_id}")
-                inventory_answer = MLService.fetch_inventory_for_product(produto, company_id)
-                user_message += (
-                    "\n[IMPORTANTE: Estes dados do BD são verídicos e não devem ser alterados.]\n"
-                    f"{inventory_answer}\n"
-                    "[Responda SOMENTE com base nesses dados, sem contradizê-los.]\n"
-                )
-
-        # Adiciona recomendação se a mensagem solicitar ação
+            logger.warning("[ChatService] Produto ou company_id ausente para inventário.")
+        
+        # Se mensagem tiver "o que devo fazer agora" e user_id -> chama predição
         if "o que devo fazer agora" in lower_msg and user_id:
             ml_recommendation = MLService.predict_next_action(user_id)
             user_message += f"\n[Recomendação ML: {ml_recommendation}]"
 
-        # Obtenha informações de serviços e exemplos a partir das constantes importadas
+        # Carrega infos relevantes + contexto do sistema
         service_info = get_service_info(user_message)
         context = load_system_context()
         history_text = "\n".join(history)
 
-        # Monta o prompt para o GPT4All, utilizando os exemplos few-shot
+        # Exemplos few-shot
         prompt = (
             f"### Contexto do Sistema:\n{context}\n\n"
             f"### Exemplos:\n{EXAMPLES}\n\n"
@@ -115,7 +104,7 @@ class ChatService:
                 detail=f"Erro ao gerar resposta: {e}"
             )
 
-        # Atualiza histórico de conversa
+        # Atualiza histórico
         history.append(f"Usuário: {user_message}")
         history.append(f"Assistente: {response_text}")
         SESSIONS[session_id] = history
