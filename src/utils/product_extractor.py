@@ -13,11 +13,12 @@ if not logger.handlers:
 
 # ──────────────────────────────────────  REGEX fallback ──
 _REGEX = re.compile(
-    r"(?i)(?:quant(?:os|as)?|qtd(?:ade)?|tem|tenho|possui(?:mos)?|mostrar|ver)"
-    r"\s+(?:de\s+|o\s+|a\s+|os\s+|as\s+)?"
-    r"(?P<prod>.+?)"
-    r"\s+(?:no|na|nos|nas|em)\s+(?:meu|minha|nosso|nossa)?\s*"
-    r"(?:invent[aá]rio|estoque)"
+    r"(?i)(?:quant(?:os|as)?|qtd(?:ade)?|tem|tenho|possui(?:mos)?|mostrar|ver|"
+    r"quais\s+(?:sao\s+)?os\s+codigos?|listar\s+codigos?|me\s+de\s+os\s+codigos?)"
+    r"(?:\s+(?:do|da|de|o|a|os|as))?\s+"
+    r"(?P<prod>\w{2,})"
+    r"(?:\s+(?:no|na|nos|nas|em|do|da|dos|das)\s+(?:meu|minha|nosso|nossa)?)?\s*"
+    r"(?:invent[aá]rio|estoque|produto)?"
 )
 
 def _sanitize(text: str) -> str:
@@ -36,24 +37,23 @@ def _get_model() -> GPT4All:
     global _model
     with _model_lock:
         if _model is None:
-            logger.info("Carregando modelo %s … isso leva alguns segundos", _MODEL_FILE)
+            logger.info("Carregando modelo %s …", _MODEL_FILE)
             _model = GPT4All(_MODEL_FILE, n_threads=os.cpu_count() or 4)
         return _model
 
-# ──────────────────────────────────────  Função pública ──
 @lru_cache(maxsize=1024)
 def extract_product(sentence: str) -> str:
     """Retorna produto em singular minúsculo ou ''."""
     if m := _REGEX.search(sentence):
         prod = _sanitize(m.group("prod"))
-        logger.debug("Regex pegou: %s", prod)
+        logger.debug("Regex capturou: %s", prod)
         return prod
 
     # fallback LLM
     prompt = (
         "Você receberá uma frase.\n"
-        "Se ela perguntar sobre quantidade em estoque ou inventário de ALGUM item, "
-        "responda apenas com o nome desse item (singular, minúsculo, sem acento). "
+        "Se a frase pedir códigos ou quantidade em estoque/inventário "
+        "de algum item, responda apenas o nome desse item (singular, minúsculo, sem acento). "
         'Caso contrário, responda "NONE".\n\n'
         f'Frase: "{sentence.strip()}"\nProduto:'
     )
