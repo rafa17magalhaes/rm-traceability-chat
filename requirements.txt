@@ -6,3 +6,4 @@ pandas
 scikit-learn
 joblib
 unidecode
+huggingface_hub

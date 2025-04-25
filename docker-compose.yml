@@ -1,5 +1,4 @@
 version: '3.8'
-
 services:
   chat-service:
     build: .
@@ -8,12 +7,9 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    environment:
-      - BACKEND_URL=http://rm_traceability_app:3001
     networks:
       - rm_traceability_network
 
 networks:
   rm_traceability_network:
-    driver: bridge
     external: true
