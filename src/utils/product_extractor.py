@@ -1,9 +1,11 @@
 from __future__ import annotations
-import os, re, logging, unidecode
+import os, re, logging, unidecode, unicodedata
+from typing import Optional
 from functools import lru_cache
 from threading import Lock
 from gpt4all import GPT4All
 
+# ──────────────────────────── logger ────────────────────────────
 logger = logging.getLogger("product_extractor")
 logger.setLevel(logging.DEBUG)
 if not logger.handlers:
@@ -11,61 +13,68 @@ if not logger.handlers:
     h.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     logger.addHandler(h)
 
-# ──────────────────────────────────────  REGEX fallback ──
+# ───────────────────── funções auxiliares ───────────────────────
+def _strip_accents(txt: str) -> str:
+    return ''.join(
+        c for c in unicodedata.normalize("NFD", txt)
+        if unicodedata.category(c) != "Mn"
+    ).lower()
+
+def _sanitize(txt: str) -> str:
+    txt = unidecode.unidecode(txt.lower())
+    txt = re.sub(r"[^a-z0-9\s\-]", "", txt).strip()
+    if txt.endswith("s") and len(txt) > 3:     # plural → singular
+        txt = txt[:-1]
+    return txt
+
+# ───────────────────────── regex principal ──────────────────────
 _REGEX = re.compile(
-    r"(?i)(?:quant(?:os|as)?|qtd(?:ade)?|tem|tenho|possui(?:mos)?|mostrar|ver|"
-    r"quais\s+(?:sao\s+)?os\s+codigos?|listar\s+codigos?|me\s+de\s+os\s+codigos?)"
+    r"(?i)"
+    r"(?:"
+        r"quant(?:os|as)?|qtd(?:ade)?|tem|tenho|possui(?:mos)?|mostrar|ver|"
+        r"(?:codigos?|codigo)\s+(?:do|da|de|dos|das)"
+    r")"
     r"(?:\s+(?:do|da|de|o|a|os|as))?\s+"
     r"(?P<prod>\w{2,})"
-    r"(?:\s+(?:no|na|nos|nas|em|do|da|dos|das)\s+(?:meu|minha|nosso|nossa)?)?\s*"
-    r"(?:invent[aá]rio|estoque|produto)?"
+    r"(?:\s+(?:no|na|nos|nas|em|do|da|dos|das)\s+(?:meu|minha|nosso|nossa))?"
+    r"(?:\s*(?:invent[aá]rio|estoque|produto))?"
 )
 
-def _sanitize(text: str) -> str:
-    text = unidecode.unidecode(text.lower())
-    text = re.sub(r"[^a-z0-9\s\-]", "", text).strip()
-    if text.endswith("s") and len(text) > 3:
-        text = text[:-1]
-    return text
-
-# ──────────────────────────────────────  LLM helper ──
-_MODEL_FILE = os.getenv("MODEL_FILE", "Meta-Llama-3-8B-Instruct.Q4_0.gguf")
-_model_lock = Lock()
-_model: GPT4All | None = None   # será carregado no 1º uso
+# ────────────────────────── mini-modelo ─────────────────────────
+_MODEL_FILE = os.getenv("MODEL_FILE", "/app/model/model.gguf")
+_lock       = Lock()
+_model: Optional[GPT4All] = None
 
 def _get_model() -> GPT4All:
     global _model
-    with _model_lock:
+    with _lock:
         if _model is None:
-            logger.info("Carregando modelo %s …", _MODEL_FILE)
+            logger.info("Carregando modelo tiny p/ extractor: %s", _MODEL_FILE)
             _model = GPT4All(_MODEL_FILE, n_threads=os.cpu_count() or 4)
         return _model
 
+# ─────────────────────── função pública ─────────────────────────
 @lru_cache(maxsize=1024)
 def extract_product(sentence: str) -> str:
-    """Retorna produto em singular minúsculo ou ''."""
     if m := _REGEX.search(sentence):
         prod = _sanitize(m.group("prod"))
         logger.debug("Regex capturou: %s", prod)
         return prod
 
-    # fallback LLM
     prompt = (
-        "Você receberá uma frase.\n"
-        "Se a frase pedir códigos ou quantidade em estoque/inventário "
-        "de algum item, responda apenas o nome desse item (singular, minúsculo, sem acento). "
-        'Caso contrário, responda "NONE".\n\n'
+        "Você receberá uma frase. "
+        "Se pedir códigos ou quantidade de um item, responda **somente** o nome do item "
+        "(singular, minúsculo, sem acento). Caso contrário responda \"NONE\".\n\n"
         f'Frase: "{sentence.strip()}"\nProduto:'
     )
-
     try:
-        model = _get_model()
-        with model.chat_session() as chat:
-            raw = chat.generate(prompt, max_tokens=10).strip()
+        mdl = _get_model()
+        with mdl.chat_session() as chat:
+            raw = chat.generate(prompt=prompt, max_tokens=8, temp=0.2)
         logger.debug("LLM cru: %s", raw)
-        if raw.upper().startswith("NONE"):
+        if not raw or raw.upper().startswith("NONE"):
             return ""
         return _sanitize(raw)
     except Exception:
-        logger.exception("Erro na extração via LLM")
+        logger.exception("Extractor LLM error")
         return ""
