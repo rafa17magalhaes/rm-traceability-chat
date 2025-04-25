@@ -1,40 +1,35 @@
-import os
-import re
-import uuid
-import logging
-import unicodedata
-from typing import Optional
+from __future__ import annotations
+import os, re, uuid, logging, unicodedata
+from typing import Optional, Dict, List
 from fastapi import HTTPException
 
-from gpt4all import GPT4All
-from src.services.ml_service import MLService
-from src.utils.context_loader import load_system_context
-from src.utils.product_extractor import extract_product
-from src.config.constants import SERVICE_INFO, EXAMPLES
+from src.services.ml_service     import MLService
+from src.utils.context_loader    import load_system_context
+from src.utils.product_extractor import extract_product, _strip_accents
+from src.utils.llm               import get_model
+from src.config.constants        import SERVICE_INFO, EXAMPLES
 
 logger = logging.getLogger("chat_service")
 logger.setLevel(logging.DEBUG)
 if not logger.handlers:
-    h = logging.StreamHandler()
-    fmt = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    h.setFormatter(fmt)
-    logger.addHandler(h)
+    sh = logging.StreamHandler()
+    sh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(sh)
 
-# Em cada sessão guardamos histórico
-SESSIONS: dict[str, dict] = {}
+SESSIONS: Dict[str, Dict] = {}
+MODEL_FILE = os.getenv("MODEL_FILE", "/app/model/model.gguf")
 
-def _strip_accents(text: str) -> str:
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', text)
-        if unicodedata.category(c) != 'Mn'
+def _chatml(system: str, user: str) -> str:
+    return (
+        "<|begin_of_text|><|start_header_id|>system\n"
+        f"{system}\n<|end_header_id|>\n\n"
+        "<|start_header_id|>user\n"
+        f"{user}\n<|end_header_id|>\n\n"
+        "<|start_header_id|>assistant\n"
     )
 
-def get_service_info(user_message: str) -> str:
-    info = []
-    for key, text in SERVICE_INFO.items():
-        if key.lower() in user_message.lower():
-            info.append(text)
-    return "\n".join(info) if info else ""
+def _service_info_for(msg: str) -> str:
+    return "\n".join(txt for k, txt in SERVICE_INFO.items() if k in msg.lower())
 
 class ChatService:
     @classmethod
@@ -42,98 +37,83 @@ class ChatService:
         cls,
         user_message: str,
         session_id: Optional[str] = None,
-        user_id: Optional[str]    = None,
-        company_id: Optional[str] = None,
+        user_id:     Optional[str] = None,
+        company_id:  Optional[str] = None,
     ) -> tuple[str, str]:
-        # gera session_id se não veio
+
         if not session_id:
             session_id = str(uuid.uuid4())
+        sess  = SESSIONS.setdefault(session_id, {"history": [], "last_product": None})
+        hist  = sess["history"]
+        produto_ant = sess["last_product"]
 
-        # carrega dados da sessão (history + last_product)
-        session_data = SESSIONS.get(session_id, {"history": [], "last_product": None})
-        history = session_data["history"]
-        last_product = session_data["last_product"]
+        lower_no_acc = _strip_accents(user_message)
 
-        # normaliza e strip accents
-        lower_raw = user_message.lower()
-        lower = _strip_accents(lower_raw)
-
-        # tenta recuperar company_id
         if not company_id and user_id:
-            cid = MLService.get_company_id_for_user(user_id)
-            if cid:
-                company_id = cid
-                logger.debug(f"[ChatService] company_id recuperado: {company_id}")
+            company_id = MLService.get_company_id_for_user(user_id)
 
-        # tenta extrair produto explícito
-        produto = extract_product(user_message)
+        produto = extract_product(user_message) or produto_ant
 
-        # se não extraiu e há referência indireta, reaproveita last_product
-        if not produto and re.search(r"\b(ele|ela|este|esse|essa|isso|produto)\b", lower):
-            produto = last_product
-            if produto:
-                logger.debug(f"[ChatService] Usando produto do contexto: {produto}")
+        if not produto and hist and lower_no_acc.startswith("e "):
+            cand = lower_no_acc[2:].strip(" ?")
+            if cand.isalpha():
+                produto = cand
+                sess["last_product"] = produto
+                logger.debug("Heurística 'e <prod>': %s", produto)
 
-        # se extraiu, atualiza o last_product
         if produto:
-            session_data["last_product"] = produto
+            sess["last_product"] = produto
 
-        # 1) Consulta EXPLÍCITA por códigos: detecta "codigos" sem acento
-        if company_id and re.search(r"\bcodigos?\b", lower):
-            if not produto:
-                reply = "Desculpe, não consegui identificar o produto para listar códigos."
-            else:
-                codes = MLService.fetch_codes_for_product(produto, company_id)
-                if codes:
-                    reply = (
-                        f"Esses são os códigos para o produto '{produto}' no inventário:\n"
-                        + "\n".join(codes)
-                    )
-                else:
-                    reply = f"Não encontrei códigos para o produto '{produto}' no inventário."
-            history.extend([f"Usuário: {user_message}", f"Assistente: {reply}"])
-            session_data["history"] = history
-            SESSIONS[session_id] = session_data
+        if produto and company_id and (
+            re.search(r"\b(quantos?|qtd|tem|tenho)\b", lower_no_acc) or
+            lower_no_acc.startswith("e ")
+        ):
+            reply = MLService.fetch_inventory_for_product(produto, company_id).strip()
+            hist += [f"Usuário: {user_message}", f"Assistente: {reply}"]
             return reply, session_id
 
-        # 2) Consulta quantidade em estoque
-        if produto and company_id:
-            logger.debug(f"[ChatService] Produto={produto} e company_id={company_id}")
-            inv = MLService.fetch_inventory_for_product(produto, company_id)
-            user_message += (
-                "\n[IMPORTANTE: Estes dados do BD são verídicos e não devem ser alterados.]\n"
-                f"{inv}\n[Responda SOMENTE com base nesses dados.]\n"
+        if re.search(r"\bcodigos?\b", lower_no_acc) and company_id:
+            codes = MLService.fetch_codes_for_product(produto, company_id) if produto else []
+            reply = (
+                f"Códigos para '{produto}':\n" + "\n".join(codes)
+                if produto and codes else
+                "Nenhum código encontrado." if produto else
+                "Desculpe, não consegui identificar o produto."
             )
-        else:
-            logger.warning("[ChatService] Produto ou company_id ausente para inventário.")
+            hist += [f"Usuário: {user_message}", f"Assistente: {reply}"]
+            return reply, session_id
 
-        # 3) Predição de próxima ação
-        if "o que devo fazer agora" in lower and user_id:
-            recomend = MLService.predict_next_action(user_id)
-            user_message += f"\n[Recomendação ML: {recomend}]"
-
-        # Monta prompt few‑shot e invoca LLM
-        service_info = get_service_info(user_message)
-        context      = load_system_context()
-        history_text = "\n".join(history)
-        prompt = (
-            f"### Contexto do Sistema:\n{context}\n\n"
-            f"### Exemplos:\n{EXAMPLES}\n\n"
-            f"### Informações Relevantes:\n{service_info}\n\n"
-            f"### Histórico da Conversa:\n{history_text}\n\n"
-            "### Instrução:\nVocê é um assistente especializado no RM Traceability SaaS.\n\n"
-            f"Usuário: {user_message}\nAssistente:"
+        system_ctx = (
+            f"{load_system_context()}\n\n{EXAMPLES}\n\n"
+            f"{_service_info_for(user_message)}\n\n"
+            "⚠️ Responda em **português do Brasil** sem repetir a pergunta."
         )
+        if produto and company_id:
+            inv = MLService.fetch_inventory_for_product(produto, company_id)
+            user_message += f"\n{inv}\n[Responda **apenas** com base nesses dados.]"
 
-        MODEL_FILE = os.getenv("MODEL_FILE", "Meta-Llama-3-8B-Instruct.Q4_0.gguf")
+        prompt = _chatml(system_ctx, user_message)
+
         try:
-            with GPT4All(MODEL_FILE).chat_session() as chat:
-                response = chat.generate(prompt, max_tokens=256)
+            model = get_model()
+            with model.chat_session() as chat:
+                raw = chat.generate(
+                    prompt=prompt,
+                    max_tokens=64,
+                    temp=0.15,
+                    top_p=0.85,
+                    repeat_penalty=1.15
+                )
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Erro ao gerar resposta: {e}")
+            logger.exception("LLM failure")
+            raise HTTPException(status_code=500, detail=f"Erro do modelo: {e}")
 
-        history.extend([f"Usuário: {user_message}", f"Assistente: {response}"])
-        session_data["history"] = history
-        SESSIONS[session_id] = session_data
+        reply = re.sub(r"<\|.*?\|>", "", raw or "").strip()
+        if not reply:
+            reply = (
+                "Posso ajudar somente com o **RM Traceability SaaS** "
+                "(inventário, códigos, empresas…), mas estou à disposição! 😉"
+            )
 
-        return response, session_id
+        hist += [f"Usuário: {user_message}", f"Assistente: {reply}"]
+        return reply, session_id
