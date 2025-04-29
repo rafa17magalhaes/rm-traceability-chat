@@ -2,34 +2,53 @@ import os
 import requests
 import logging
 from typing import Optional
+from joblib import load
 
 logger = logging.getLogger("MLService")
 logger.setLevel(logging.DEBUG)
 if not logger.handlers:
     handler = logging.StreamHandler()
-    formatter = logging.Formatter(
+    handler.setFormatter(logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
+    ))
     logger.addHandler(handler)
 
 class MLService:
+    _action_model = None
+
     @staticmethod
     def get_company_id_for_user(user_id: str) -> Optional[str]:
         backend_url = os.getenv("BACKEND_URL", "http://rm_traceability_app:3001")
         url = f"{backend_url}/orchestration/full-data/{user_id}"
-        logger.debug(f"[get_company_id_for_user] Chamando endpoint: {url}")
+        logger.debug(f"[get_company_id_for_user] GET {url}")
         try:
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
             data = resp.json()
-            user_obj = data.get("user")
-            if user_obj and user_obj.get("companyId"):
-                return user_obj["companyId"]
-            logger.error(f"[get_company_id_for_user] user.companyId não encontrado. user_obj={user_obj}")
+            return data.get("user", {}).get("companyId")
         except Exception:
-            logger.error("[get_company_id_for_user] Erro ao buscar companyId", exc_info=True)
-        return None
+            logger.error("[get_company_id_for_user] falha", exc_info=True)
+            return None
+
+    @staticmethod
+    def _load_action_model():
+        if MLService._action_model is None:
+            model_path = os.path.join(
+                os.path.dirname(__file__), "..", "ml", "model.pkl"
+            )
+            MLService._action_model = load(model_path)
+            logger.info(f"Action model carregado de {model_path}")
+        return MLService._action_model
+
+    @staticmethod
+    def predict_next_action(n_codes: int, n_events: int) -> str:
+        """
+        Prediz a próxima ação com base nos contadores de códigos e eventos.
+        """
+        model = MLService._load_action_model()
+        pred = model.predict([[n_codes, n_events]])[0]
+        logger.debug(f"[predict_next_action] features=({n_codes},{n_events}) -> {pred}")
+        return pred
 
     @staticmethod
     def get_inventory_quantity(resource_name: str, company_id: str) -> int:
@@ -38,14 +57,13 @@ class MLService:
             f"{backend}/orchestration/inventory-quantity"
             f"?companyId={company_id}&resourceName={resource_name}"
         )
-        logger.debug(f"[get_inventory_quantity] Chamando endpoint: {url}")
+        logger.debug(f"[get_inventory_quantity] GET {url}")
         try:
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
-            data = resp.json()
-            return data.get("amount", 0)
+            return resp.json().get("amount", 0)
         except Exception:
-            logger.error("[get_inventory_quantity] Erro ao consultar inventory-quantity", exc_info=True)
+            logger.error("[get_inventory_quantity] falha", exc_info=True)
             return 0
 
     @staticmethod
@@ -54,23 +72,17 @@ class MLService:
         return f"\n[Resposta do BD: Você tem {qtd} unidades de {resource_name} no estoque.]"
 
     @staticmethod
-    def predict_next_action(user_id: str) -> str:
-        logger.debug(f"[predict_next_action] Chamando modelo de ML para user_id: {user_id}")
-        return "inventario"
-
-    @staticmethod
     def fetch_codes_for_product(resource_name: str, company_id: str) -> list[str]:
-        """Retorna a lista de códigos (value) para um resource no inventário."""
         backend = os.getenv("BACKEND_URL", "http://rm_traceability_app:3001")
         url = (
             f"{backend}/orchestration/inventory-codes"
             f"?companyId={company_id}&resourceName={resource_name}"
         )
-        logger.debug(f"[fetch_codes_for_product] Chamando endpoint: {url}")
+        logger.debug(f"[fetch_codes_for_product] GET {url}")
         try:
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
             return resp.json().get("codes", [])
         except Exception:
-            logger.error("[fetch_codes_for_product] Erro ao buscar códigos", exc_info=True)
+            logger.error("[fetch_codes_for_product] falha", exc_info=True)
             return []

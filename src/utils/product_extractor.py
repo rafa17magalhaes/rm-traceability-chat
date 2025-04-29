@@ -1,5 +1,9 @@
 from __future__ import annotations
-import os, re, logging, unidecode, unicodedata
+import os
+import re
+import logging
+import unidecode
+import unicodedata
 from typing import Optional
 from functools import lru_cache
 from threading import Lock
@@ -23,16 +27,17 @@ def _strip_accents(txt: str) -> str:
 def _sanitize(txt: str) -> str:
     txt = unidecode.unidecode(txt.lower())
     txt = re.sub(r"[^a-z0-9\s\-]", "", txt).strip()
-    if txt.endswith("s") and len(txt) > 3:     # plural → singular
+    if txt.endswith("s") and len(txt) > 3:
         txt = txt[:-1]
     return txt
 
 # ───────────────────────── regex principal ──────────────────────
 _REGEX = re.compile(
     r"(?i)"
+    r"(?!.*\bnao sei\b)"
     r"(?:"
         r"quant(?:os|as)?|qtd(?:ade)?|tem|tenho|possui(?:mos)?|mostrar|ver|"
-        r"(?:codigos?|codigo)\s+(?:do|da|de|dos|das)"
+        r"(?:códigos?|codigos?)\s+(?:do|da|de|dos|das)"
     r")"
     r"(?:\s+(?:do|da|de|o|a|os|as))?\s+"
     r"(?P<prod>\w{2,})"
@@ -71,10 +76,10 @@ def extract_product(sentence: str) -> str:
         mdl = _get_model()
         with mdl.chat_session() as chat:
             raw = chat.generate(prompt=prompt, max_tokens=8, temp=0.2)
-        logger.debug("LLM cru: %s", raw)
+        logger.debug("Extractor LLM cru: %s", raw)
         if not raw or raw.upper().startswith("NONE"):
             return ""
         return _sanitize(raw)
     except Exception:
-        logger.exception("Extractor LLM error")
+        logger.exception("Extractor LLM failure")
         return ""
