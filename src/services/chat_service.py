@@ -97,7 +97,8 @@ class ChatService:
             f"{load_system_context()}\n\n"
             f"{EXAMPLES}\n\n"
             f"Informações de serviço:\n{service_info_text}\n\n"
-            "⚠️ Responda em **português do Brasil** sem repetir a pergunta."
+            "⚠️ Responda em **português do Brasil**, de forma concisa e direta, "
+            "preferencialmente em até duas frases, sem repetições."
         )
 
         last_prod = sess["last_product"]
@@ -112,8 +113,8 @@ class ChatService:
             with model.chat_session() as chat:
                 raw = chat.generate(
                     prompt=prompt,
-                    max_tokens=128,
-                    temp=0.05,
+                    max_tokens=70,
+                    temp=0.1,
                     top_p=0.5,
                     repeat_penalty=1.2
                 )
@@ -121,8 +122,14 @@ class ChatService:
             logger.exception("LLM failure")
             raise HTTPException(status_code=500, detail=f"Erro do modelo: {e}")
 
-        reply = re.sub(r"<\|.*?\|>", "", raw or "").strip()
-        if not reply or re.match(r'^(none|nenhum|nao)\b', reply.lower()) or "/dashboard" not in reply:
+        clean = re.sub(r"<\|.*?\|>", "", raw or "").strip()
+        parts = re.split(r'(?<=[\.!?])\s', clean)
+        reply = ' '.join(parts[:2]).strip()
+        if (
+            not reply
+            or re.match(r'^(none|nenhum|nao)\b', reply.lower())
+            or "/dashboard" not in reply
+        ):
             reply = cls.FALLBACK
 
         try:
